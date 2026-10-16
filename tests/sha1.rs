@@ -9,7 +9,20 @@ use handl_platform::{EvalContext, Module};
 use handl_plugin_lib_crypto::CryptoModule;
 use serde_json::json;
 
+
+/// Install the canonical default language once per test binary (ADR-0128
+/// §"The 0.8 seam"): `HandlModule` bridge runtimes resolve it lazily.
+fn ensure_lang() {
+    if handl_plugin_lib_handl::default_language().is_none() {
+        let _ = handl_plugin_lib_handl::install_default_language(
+            handl_kit_data_canonical::language_from_yaml()
+                .expect("canonical language assembles"),
+        );
+    }
+}
+
 fn sha1(input: serde_json::Value) -> String {
+    ensure_lang();
     CryptoModule
         .function("sha1")
         .expect("crypto.sha1 must be exposed")

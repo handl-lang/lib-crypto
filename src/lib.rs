@@ -43,7 +43,7 @@ use handl_plugin_lib_handl::{HandlLibraryPlugin, OpRegistry};
 /// The handl source declaring the crypto `op` interface — the single source
 /// of truth for the crypto API surface. Loaded at compile time from the
 /// kit-stdlib data dir.
-const CRYPTO_HNL: &str = include_str!("../../../handl-packages/crypto/crypto.hnl");
+const CRYPTO_HNL: &str = include_str!("../handl-packages/crypto/crypto.hnl");
 
 /// The op names declared in `crypto.hnl`.
 const CRYPTO_OPS: &[&str] = &["crypto.sha256", "crypto.md5"];

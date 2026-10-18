@@ -7,17 +7,6 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/handl-lang/lib-crypto"
 
 [dependencies]
-handl-platform = { git = "https://github.com/handl-lang/platform", branch = "main" }
-handl-plugin-lib-handl = { git = "https://github.com/handl-lang/platform", branch = "main" }
-handl-plugin-lib-stdlib = { git = "https://github.com/handl-lang/stdlib", branch = "main" }
-serde_json = "1"
-sha2 = "0.10"
-md-5 = "0.10"
-hex = "0.4"
-
-[dev-dependencies]
-handl-kit-data-canonical = { git = "https://github.com/handl-lang/lang", branch = "main" }
-handl-plugin-lib-handl = { git = "https://github.com/handl-lang/platform", branch = "main" }
 
 [patch."https://github.com/handl-lang/engine"]
 hnl-engine = { path = "../engine" }

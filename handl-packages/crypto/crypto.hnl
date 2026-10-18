@@ -17,8 +17,8 @@ op "crypto.md5" : Value -> String
 op "crypto.sha1" : Value -> String
   guarantee: IsHex(output)
 
-handle "crypto.sha256" with rust_crypto_sha256
-handle "crypto.md5" with rust_crypto_md5
+handle "crypto.sha256" with sha256
+handle "crypto.md5" with md5
 handle "crypto.sha1" with sha1
 
 from "math" import * as math
@@ -191,6 +191,227 @@ do {
     to_hex(h)
   }
 
+
+  -- ---------------------------------------------------------------------
+  -- SHA-256 (FIPS 180-4) -- pure Handl over math/bytes/typeof.
+  -- ---------------------------------------------------------------------
+
+  -- rotr32 -- rotate-right within the low 32 bits (via rotl32).
+  rotr32 :: (n, k) ~> math.rotl32(n, 32 - k)
+
+  -- sha256 K constants (first 32 bits of the fractional parts of the
+  -- cube roots of the first 64 primes).
+  k256 :: [1116352408, 1899447441, 3049323471, 3921009573, 961987163,
+           1508970993, 2453635748, 2870763221, 3624381080, 310598401,
+           607225278, 1426881987, 1925078388, 2162078206, 2614888103,
+           3248222580, 3835390401, 4022224774, 264347078, 604807628,
+           770255983, 1249150122, 1555081692, 1996064986, 2554220882,
+           2821834349, 2952996808, 3210313671, 3336571891, 3584528711,
+           113926993, 338241895, 666307205, 773529912, 1294757372,
+           1396182291, 1695183700, 1986661051, 2177026350, 2456956037,
+           2730485921, 2820302411, 3259730800, 3345764771, 3516065817,
+           3600352804, 4094571909, 275423344, 430227734, 506948616,
+           659060556, 883997877, 958139571, 1322822218, 1537002063,
+           1747873779, 1955562222, 2024104815, 2227730452, 2361852424,
+           2428436474, 2756734187, 3204031479, 3329325298]
+
+  -- s256_schedule -- the 64-word message schedule for the chunk at `off`.
+  s256_schedule :: (xs, off) ~> do {
+    w0 :: while { j: 0, acc: [] } {
+      [j, acc] ~> if j >= 16 {
+        { out: acc }
+      } else {
+        { state: { j: j + 1, acc: [...acc, word(xs, off, j)] } }
+      }
+    }
+    while { i: 16, w: w0 } {
+      [i, w] ~> if i >= 64 {
+        { out: w }
+      } else {
+        do {
+          x0 :: w[i - 15]
+          x1 :: w[i - 2]
+          s0 :: math.bit_xor(
+            math.bit_xor(rotr32(x0, 7), rotr32(x0, 18)),
+            math.shr(x0, 3))
+          s1 :: math.bit_xor(
+            math.bit_xor(rotr32(x1, 17), rotr32(x1, 19)),
+            math.shr(x1, 10))
+          { state: { i: i + 1,
+                     w: [...w, math.u32(w[i - 16] + s0 + w[i - 7] + s1)] } }
+        }
+      }
+    }
+  }
+
+  -- s256_compress -- fold the chunk at `off` into the eight u32 registers.
+  s256_compress :: (h, xs, off) ~> do {
+    w :: s256_schedule(xs, off)
+    r :: while { i: 0, a: h[0], b: h[1], c: h[2], d: h[3],
+                 e: h[4], f: h[5], g: h[6], hh: h[7] } {
+      [i, a, b, c, d, e, f, g, hh] ~> if i >= 64 {
+        { out: [a, b, c, d, e, f, g, hh] }
+      } else {
+        do {
+          s1 :: math.bit_xor(
+            math.bit_xor(rotr32(e, 6), rotr32(e, 11)), rotr32(e, 25))
+          ch :: math.bit_or(
+            math.bit_and(e, f),
+            math.bit_and(math.bit_not(e), g))
+          t1 :: math.u32(hh + s1 + ch + k256[i] + w[i])
+          s0 :: math.bit_xor(
+            math.bit_xor(rotr32(a, 2), rotr32(a, 13)), rotr32(a, 22))
+          maj :: math.bit_xor(
+            math.bit_xor(math.bit_and(a, b), math.bit_and(a, c)),
+            math.bit_and(b, c))
+          t2 :: math.u32(s0 + maj)
+          { state: { i: i + 1, a: math.u32(t1 + t2), b: a, c: b, d: c,
+                     e: math.u32(d + t1), f: e, g: f, hh: g } }
+        }
+      }
+    }
+    out :: [math.u32(h[0] + r[0]), math.u32(h[1] + r[1]),
+            math.u32(h[2] + r[2]), math.u32(h[3] + r[3]),
+            math.u32(h[4] + r[4]), math.u32(h[5] + r[5]),
+            math.u32(h[6] + r[6]), math.u32(h[7] + r[7])]
+    out
+  }
+
+  -- sha256_digest -- run SHA-256 over a list of byte ints -> hex.
+  sha256_digest :: (msg) ~> do {
+    padded :: pad(msg)
+    n :: list_len(padded)
+    h :: while { off: 0,
+                 h: [1779033703, 3144134277, 1013904242, 2773480762,
+                     1359893119, 2600822924, 528734635, 1541459225] } {
+      [off, h] ~> if off >= n {
+        { out: h }
+      } else {
+        { state: { off: off + 64, h: s256_compress(h, padded, off) } }
+      }
+    }
+    to_hex(h)
+  }
+
+  -- ---------------------------------------------------------------------
+  -- MD5 (RFC 1321) -- pure Handl over math/bytes/typeof.
+  -- ---------------------------------------------------------------------
+
+  -- le_word -- the j-th little-endian u32 word of the chunk at `off`.
+  le_word :: (xs, off, j) ~> do {
+    i :: off + j * 4
+    math.u32(math.bit_or(
+      xs[i],
+      math.bit_or(
+        math.shl(xs[i + 1], 8),
+        math.bit_or(math.shl(xs[i + 2], 16), math.shl(xs[i + 3], 24)))))
+  }
+
+  -- le_pad -- MD5 padding: 0x80, zeros to 56 mod 64, then the 8-byte
+  -- little-endian bit length.
+  le_pad :: (msg) ~> do {
+    ml :: list_len(msg) * 8
+    padded :: while { xs: [...msg, 128], n: 1 } {
+      [xs, n] ~> if math.mod(list_len(xs), 64) == 56 {
+        { out: xs }
+      } else {
+        { state: { xs: [...xs, 0], n: n + 1 } }
+      }
+    }
+    out :: [...padded,
+      math.bit_and(ml, 255),
+      math.bit_and(math.shr(ml, 8), 255),
+      math.bit_and(math.shr(ml, 16), 255),
+      math.bit_and(math.shr(ml, 24), 255),
+      math.bit_and(math.shr(ml, 32), 255),
+      math.bit_and(math.shr(ml, 40), 255),
+      math.bit_and(math.shr(ml, 48), 255),
+      math.bit_and(math.shr(ml, 56), 255)]
+    out
+  }
+
+  kmd5 :: [3614090360, 3905402710, 606105819, 3250441966, 4118548399,
+           1200080426, 2821735955, 4249261313, 1770035416, 2336552879,
+           4294925233, 2304563134, 1804603682, 4254626195, 2792965006,
+           1236535329, 4129170786, 3225465664, 643717713, 3921069994,
+           3593408605, 38016083, 3634488961, 3889429448, 568446438,
+           3275163606, 4107603335, 1163531501, 2850285829, 4243563512,
+           1735328473, 2368359562, 4294588738, 2272392833, 1839030562,
+           4259657740, 2763975236, 1272893353, 4139469664, 3200236656,
+           681279174, 3936430074, 3572445317, 76029189, 3654602809,
+           3873151461, 530742520, 3299628645, 4096336452, 1126891415,
+           2878612391, 4237533241, 1700485571, 2399980690, 4293915773,
+           2240044497, 1873313359, 4264355552, 2734768916, 1309151649,
+           4149444226, 3174756917, 718787259, 3951481745]
+  md5_shift :: [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+                5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+                4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+                6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21]
+
+  -- md5_compress -- fold the chunk at `off` into the four u32 registers.
+  md5_compress :: (h, xs, off) ~> do {
+    r :: while { i: 0, a: h[0], b: h[1], c: h[2], d: h[3] } {
+      [i, a, b, c, d] ~> if i >= 64 {
+        { out: [a, b, c, d] }
+      } else {
+        do {
+          fg :: if i < 16 {
+            { f: math.bit_or(math.bit_and(b, c),
+                             math.bit_and(math.bit_not(b), d)),
+              g: i }
+          } else if i < 32 {
+            { f: math.bit_or(math.bit_and(d, b),
+                             math.bit_and(math.bit_not(d), c)),
+              g: math.mod(5 * i + 1, 16) }
+          } else if i < 48 {
+            { f: math.bit_xor(math.bit_xor(b, c), d),
+              g: math.mod(3 * i + 5, 16) }
+          } else {
+            { f: math.bit_xor(c, math.bit_or(b, math.bit_not(d))),
+              g: math.mod(7 * i, 16) }
+          }
+          t :: math.u32(fg.f + a + kmd5[i] + le_word(xs, off, fg.g))
+          { state: { i: i + 1, a: d, b: math.u32(b + math.rotl32(t, md5_shift[i])),
+                     c: b, d: c } }
+        }
+      }
+    }
+    out :: [math.u32(h[0] + r[0]), math.u32(h[1] + r[1]),
+            math.u32(h[2] + r[2]), math.u32(h[3] + r[3])]
+    out
+  }
+
+  -- word_hex_le -- the 8-char lowercase hex of one u32, little-endian
+  -- byte order (low byte first, as MD5 requires).
+  word_hex_le :: (w) ~> do {
+    digits :: ["0", "1", "2", "3", "4", "5", "6", "7",
+               "8", "9", "a", "b", "c", "d", "e", "f"]
+    while { s: 0, acc: "" } {
+      [s, acc] ~> if s >= 4 {
+        { out: acc }
+      } else {
+        { state: { s: s + 1,
+                   acc: acc + digits[math.bit_and(math.shr(w, s * 8 + 4), 15)]
+                            + digits[math.bit_and(math.shr(w, s * 8), 15)] } }
+      }
+    }
+  }
+
+  -- md5_digest -- run MD5 over a list of byte ints -> hex.
+  md5_digest :: (msg) ~> do {
+    padded :: le_pad(msg)
+    n :: list_len(padded)
+    h :: while { off: 0,
+                 h: [1732584193, 4023233417, 2562383102, 271733878] } {
+      [off, h] ~> if off >= n {
+        { out: h }
+      } else {
+        { state: { off: off + 64, h: md5_compress(h, padded, off) } }
+      }
+    }
+    word_hex_le(h[0]) + word_hex_le(h[1]) + word_hex_le(h[2]) + word_hex_le(h[3])
+  }
+
   -- ---------------------------------------------------------------------
   -- Exports
   -- ---------------------------------------------------------------------
@@ -198,6 +419,12 @@ do {
   {
     -- crypto.sha1 -- SHA-1 hex digest of a string (UTF-8), byte list, or
     -- Bytes buffer.
-    sha1: (input) ~> digest(to_bytes(input))
+    sha1: (input) ~> digest(to_bytes(input)),
+    -- crypto.sha256 -- SHA-256 hex digest of a string (UTF-8), byte list,
+    -- or Bytes buffer.
+    sha256: (input) ~> sha256_digest(to_bytes(input)),
+    -- crypto.md5 -- MD5 hex digest of a string (UTF-8), byte list, or
+    -- Bytes buffer.
+    md5: (input) ~> md5_digest(to_bytes(input))
   }
 }

@@ -3,8 +3,10 @@ name = "handl-plugin-lib-crypto"
 version = "0.1.0"
 edition = "2024"
 description = "Cryptographic hashing library for the handl runtime."
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/handl-lang/lib-crypto"
+readme = "README.md"
+homepage = "https://github.com/handl-lang/lib-crypto"
 
 [dependencies]
 

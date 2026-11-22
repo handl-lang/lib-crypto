@@ -1,0 +1,11 @@
+-- lib-crypto: modules this package provides (entry defaults to
+-- src/index.hnl; N modules resolve to src/<name>/index.hnl).
+{
+  modules: ["crypto"],
+  entry: "handl-packages/crypto/crypto.hnl",
+  name: "crypto",
+  description: "Cryptographic hashing (SHA-1/SHA-256/MD5) in pure handl.",
+  license: "MIT",
+  keywords: ["crypto", "sha1", "sha256", "md5", "stdlib", "handl"],
+  homepage: "https://github.com/handl-lang/lib-crypto",
+}

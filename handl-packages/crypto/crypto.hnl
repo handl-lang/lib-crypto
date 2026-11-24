@@ -10,11 +10,11 @@
 cap "crypto.sha256"
 cap "crypto.md5"
 cap "crypto.sha1"
-op "crypto.sha256" : Value -> String
+op "crypto.sha256" : Value ~> String
   guarantee: IsHex(output)
-op "crypto.md5" : Value -> String
+op "crypto.md5" : Value ~> String
   guarantee: IsHex(output)
-op "crypto.sha1" : Value -> String
+op "crypto.sha1" : Value ~> String
   guarantee: IsHex(output)
 
 handle "crypto.sha256" with sha256

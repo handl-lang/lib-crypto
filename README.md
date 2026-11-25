@@ -18,7 +18,7 @@ handl-packages/crypto/   the .hnl package (crypto.hnl + tests)
 examples/crypto/         a runnable example
 pkg.hnl                  package manifest — modules, entry, license
 scripts/hnl-gate.sh      the gate
-ci.sh                    bupha entry
+workflows/gate.yaml                    bupha entry (handl-gates)
 ```
 
 ## Gate
